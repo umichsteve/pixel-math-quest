@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "cd pixel-math-quest && npm install",
+  "buildCommand": "cd pixel-math-quest && npm run build",
+  "outputDirectory": "pixel-math-quest/dist"
+}
