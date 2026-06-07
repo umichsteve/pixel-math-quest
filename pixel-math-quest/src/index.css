@@ -1,4 +1,6 @@
 html, body {
   margin: 0;
   padding: 0;
+  /* Game base color (--bg) so launch never flashes white */
+  background-color: #1a1a2e;
 }
