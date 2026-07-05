@@ -1,6 +1,14 @@
-import { useState, useCallback } from 'react';
-import { getStages, generateQuestion, QUESTIONS_PER_STAGE } from './questionGenerator';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import {
+  getStage,
+  getStages,
+  generateQuestion,
+  starsForScore,
+  QUESTIONS_PER_STAGE,
+  MAX_STARS_PER_STAGE,
+} from './questionGenerator';
 import { useProgress } from './useProgress';
+import { isMuted, setMuted, playCorrect, playWrong, playStageClear } from './sound';
 import './App.css';
 
 const SCREENS = { MAP: 'map', PLAY: 'play', RESULT: 'result' };
@@ -28,13 +36,34 @@ function PixelHero({ mood }) {
   );
 }
 
-function MapScreen({ onSelectStage, progress }) {
+function MuteButton() {
+  const [muted, setMutedState] = useState(isMuted);
+  const toggle = () => {
+    const next = !muted;
+    setMuted(next);
+    setMutedState(next);
+  };
+  return (
+    <button
+      type="button"
+      className="icon-btn mute-btn"
+      onClick={toggle}
+      aria-pressed={muted}
+      aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
+    >
+      {muted ? '\u{1F507}' : '\u{1F50A}'}
+    </button>
+  );
+}
+
+function MapScreen({ onSelectStage, onReset, progress }) {
   const stages = getStages();
+  const maxStars = stages.length * MAX_STARS_PER_STAGE;
   return (
     <div className="screen map-screen">
       <h1 className="game-title">Pixel Math Quest</h1>
       <PixelHero mood="happy" />
-      <p className="total-stars">Total Stars: {progress.totalStars} / 15</p>
+      <p className="total-stars">Total Stars: {progress.totalStars} / {maxStars}</p>
       <div className="stage-list">
         {stages.map((stage) => {
           const unlocked = stage.id === 1 || progress.stagesCleared.includes(stage.id - 1);
@@ -56,12 +85,12 @@ function MapScreen({ onSelectStage, progress }) {
         })}
       </div>
       {progress.totalStars > 0 && (
-        <button className="reset-btn" onClick={() => {
-          if (window.confirm('Reset all progress?')) {
-            window.location.reload();
-            localStorage.removeItem('pixel-math-quest-progress');
-          }
-        }}>
+        <button
+          className="reset-btn"
+          onClick={() => {
+            if (window.confirm('Reset all progress?')) onReset();
+          }}
+        >
           Reset Progress
         </button>
       )}
@@ -69,14 +98,34 @@ function MapScreen({ onSelectStage, progress }) {
   );
 }
 
-function PlayScreen({ stageId, onFinish }) {
-  const stage = getStages().find((s) => s.id === stageId);
+// Rotating praise keeps correct answers from feeling robotic without needing
+// any assets. Indexed by question number so the sequence is stable per run.
+const PRAISE = ['Correct!', 'Nice one!', 'You got it!', 'Awesome!', 'Great job!'];
+
+function PlayScreen({ stageId, onFinish, onQuit }) {
+  const stage = getStage(stageId);
   const [qIndex, setQIndex] = useState(0);
   const [question, setQuestion] = useState(() => generateQuestion(stageId));
   const [input, setInput] = useState('');
   const [correct, setCorrect] = useState(0);
-  const [feedback, setFeedback] = useState(null);
+  const [feedback, setFeedback] = useState(null); // { correct: boolean, text: string } | null
   const [heroMood, setHeroMood] = useState('normal');
+  const inputRef = useRef(null);
+  const timerRef = useRef(null);
+
+  // The input is disabled while feedback shows, which drops focus on iOS and
+  // closes the keyboard. Refocus when the next question arrives so a kid
+  // never has to re-tap the box between questions.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [qIndex]);
+
+  // Never fire the advance timer into an unmounted screen (e.g. quit mid-feedback).
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  const handleQuit = () => {
+    if (window.confirm('Quit this stage? This run will not be saved.')) onQuit();
+  };
 
   const handleSubmit = useCallback(
     (e) => {
@@ -87,22 +136,35 @@ function PlayScreen({ stageId, onFinish }) {
       const isCorrect = userAnswer === question.answer;
       const newCorrect = isCorrect ? correct + 1 : correct;
 
-      setFeedback(isCorrect ? 'Correct!' : `Nope! It was ${question.answer}`);
+      // Play inside the submit gesture so iOS unlocks the AudioContext.
+      if (isCorrect) playCorrect();
+      else playWrong();
+
+      setFeedback(
+        isCorrect
+          ? { correct: true, text: PRAISE[qIndex % PRAISE.length] }
+          : { correct: false, text: `Nope! It was ${question.answer}` },
+      );
       setHeroMood(isCorrect ? 'happy' : 'sad');
       setCorrect(newCorrect);
 
-      setTimeout(() => {
+      // A correct answer can advance quickly; a wrong one shows the real
+      // answer, and a kid needs time to actually read it. That pause is the
+      // teaching moment, so don't rush it.
+      const advanceDelay = isCorrect ? 1000 : 2000;
+
+      timerRef.current = setTimeout(() => {
         const nextIndex = qIndex + 1;
         if (nextIndex >= QUESTIONS_PER_STAGE) {
           onFinish(newCorrect, QUESTIONS_PER_STAGE);
         } else {
           setQIndex(nextIndex);
-          setQuestion(generateQuestion(stageId));
+          setQuestion(generateQuestion(stageId, question.text));
           setInput('');
           setFeedback(null);
           setHeroMood('normal');
         }
-      }, 1200);
+      }, advanceDelay);
     },
     [input, question, correct, qIndex, stageId, onFinish],
   );
@@ -110,7 +172,11 @@ function PlayScreen({ stageId, onFinish }) {
   return (
     <div className="screen play-screen" style={{ '--stage-color': stage.color }}>
       <div className="play-header">
+        <button type="button" className="icon-btn quit-btn" onClick={handleQuit} aria-label="Quit stage">
+          ✕
+        </button>
         <span className="stage-label">{stage.name}</span>
+        <MuteButton />
         <span className="progress-label">
           {qIndex + 1} / {QUESTIONS_PER_STAGE}
         </span>
@@ -125,12 +191,21 @@ function PlayScreen({ stageId, onFinish }) {
       <div className="question-card">
         <p className="question-text">{question.text} = ?</p>
         <form onSubmit={handleSubmit}>
+          {/* type="text" + inputMode avoids number-input quirks (e/-/. accepted,
+              scroll wheel changing the value) while still showing the digit
+              pad on iOS. onChange strips non-digits so parseInt is always
+              grading exactly what the kid sees. Max answer is 144 (12 x 12). */}
           <input
+            ref={inputRef}
             className="answer-input"
-            type="number"
+            type="text"
             inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={3}
+            enterKeyHint="go"
+            autoComplete="off"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => setInput(e.target.value.replace(/\D/g, ''))}
             disabled={feedback !== null}
             autoFocus
             aria-label="Your answer"
@@ -139,21 +214,30 @@ function PlayScreen({ stageId, onFinish }) {
             Go!
           </button>
         </form>
-        {feedback && (
-          <p className={`feedback ${feedback.startsWith('Correct') ? 'correct' : 'wrong'}`}>
-            {feedback}
-          </p>
-        )}
+        <p
+          className={`feedback ${feedback ? (feedback.correct ? 'correct' : 'wrong') : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {feedback ? feedback.text : '\u00A0'}
+        </p>
       </div>
       <p className="score-tracker">Score: {correct} / {qIndex + (feedback ? 1 : 0)}</p>
     </div>
   );
 }
 
-function ResultScreen({ stageId, correct, total, onBack }) {
-  const stage = getStages().find((s) => s.id === stageId);
-  const stars = correct === total ? 3 : correct >= total * 0.7 ? 2 : correct >= total * 0.5 ? 1 : 0;
+function ResultScreen({ stageId, correct, total, onBack, onReplay, onNext }) {
+  const stage = getStage(stageId);
+  // starsForScore is the single source of truth shared with useProgress, so
+  // the stars shown here always match what was persisted for the stage.
+  const stars = starsForScore(correct, total);
   const passed = stars > 0;
+  const nextStage = getStage(stageId + 1);
+
+  useEffect(() => {
+    if (passed) playStageClear();
+  }, [passed]);
 
   return (
     <div className="screen result-screen" style={{ '--stage-color': stage.color }}>
@@ -164,15 +248,29 @@ function ResultScreen({ stageId, correct, total, onBack }) {
       </p>
       <StarDisplay count={stars} />
       {!passed && <p className="hint">Get at least 50% to pass.</p>}
-      <button className="back-btn" onClick={onBack}>
-        Back to Map
-      </button>
+      <div className="result-actions">
+        {passed && nextStage && (
+          <button
+            className="back-btn"
+            style={{ '--stage-color': nextStage.color }}
+            onClick={onNext}
+          >
+            Next: {nextStage.name}
+          </button>
+        )}
+        <button className="back-btn" onClick={onReplay}>
+          {passed ? 'Play Again' : 'Try Again'}
+        </button>
+        <button className="back-btn secondary" onClick={onBack}>
+          Back to Map
+        </button>
+      </div>
     </div>
   );
 }
 
 export default function App() {
-  const { progress, recordStageResult } = useProgress();
+  const { progress, recordStageResult, resetProgress } = useProgress();
   const [screen, setScreen] = useState(SCREENS.MAP);
   const [currentStage, setCurrentStage] = useState(null);
   const [lastResult, setLastResult] = useState(null);
@@ -197,8 +295,21 @@ export default function App() {
     setLastResult(null);
   }, []);
 
+  // Replay and next-stage both leave the RESULT screen, which unmounts
+  // PlayScreen's previous instance, so the new run always starts fresh.
+  const handleReplay = useCallback(() => {
+    setLastResult(null);
+    setScreen(SCREENS.PLAY);
+  }, []);
+
+  const handleNextStage = useCallback(() => {
+    setCurrentStage((s) => s + 1);
+    setLastResult(null);
+    setScreen(SCREENS.PLAY);
+  }, []);
+
   if (screen === SCREENS.PLAY && currentStage) {
-    return <PlayScreen stageId={currentStage} onFinish={handleFinish} />;
+    return <PlayScreen stageId={currentStage} onFinish={handleFinish} onQuit={handleBackToMap} />;
   }
 
   if (screen === SCREENS.RESULT && lastResult) {
@@ -208,9 +319,11 @@ export default function App() {
         correct={lastResult.correct}
         total={lastResult.total}
         onBack={handleBackToMap}
+        onReplay={handleReplay}
+        onNext={handleNextStage}
       />
     );
   }
 
-  return <MapScreen onSelectStage={handleSelectStage} progress={progress} />;
+  return <MapScreen onSelectStage={handleSelectStage} onReset={resetProgress} progress={progress} />;
 }
