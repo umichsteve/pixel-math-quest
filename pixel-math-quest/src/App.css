@@ -218,12 +218,39 @@ body {
 .play-header {
   width: 100%;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
   font-size: 10px;
 }
 
 .stage-label {
   color: var(--stage-color);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-btn {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 7px 9px;
+  background: var(--surface);
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.quit-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .progress-label {
@@ -319,6 +346,13 @@ body {
   font-size: 12px;
   padding: 8px 14px;
   border-radius: var(--radius);
+}
+
+/* Animation lives on the state classes so it re-triggers on every answer
+   (the element itself now persists between questions to hold layout and
+   host the aria-live region). */
+.feedback.correct,
+.feedback.wrong {
   animation: pop 0.2s ease;
 }
 
@@ -375,4 +409,32 @@ body {
 
 .back-btn:hover {
   filter: brightness(1.1);
+}
+
+.result-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.result-actions .back-btn {
+  margin-top: 0;
+  min-width: 230px;
+}
+
+/* De-emphasized action (Back to Map) so the forward path reads as primary */
+.back-btn.secondary {
+  background: var(--surface);
+  border: 2px solid #444;
+  box-shadow: none;
+}
+
+/* The one continuous animation is the hero bob; one-shot pops and short
+   button transitions stay, which is consistent with WCAG motion guidance. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-body {
+    animation: none;
+  }
 }

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { starsForScore } from './questionGenerator';
 
 const STORAGE_KEY = 'pixel-math-quest-progress';
 
@@ -7,7 +8,7 @@ function loadProgress() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch {
-    /* corrupted data — start fresh */
+    /* corrupted data, start fresh */
   }
   return { stagesCleared: [], totalStars: 0, bestScores: {} };
 }
@@ -21,7 +22,7 @@ export function useProgress() {
 
   const recordStageResult = useCallback((stageId, correct, total) => {
     setProgress((prev) => {
-      const stars = correct === total ? 3 : correct >= total * 0.7 ? 2 : correct >= total * 0.5 ? 1 : 0;
+      const stars = starsForScore(correct, total);
       const cleared = stars > 0 && !prev.stagesCleared.includes(stageId)
         ? [...prev.stagesCleared, stageId]
         : prev.stagesCleared;
