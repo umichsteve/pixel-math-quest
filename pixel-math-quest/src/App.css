@@ -431,6 +431,36 @@ body {
   box-shadow: none;
 }
 
+/* Streak chip: appears at 3+ correct in a row, pops like the stars do */
+.streak-chip {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 3px 8px;
+  font-size: 0.55rem;
+  color: #1a1a2e;
+  background: #fbbf24;
+  border-radius: 4px;
+  animation: pop 0.2s ease;
+}
+
+/* Result screen: personal-best callouts */
+.new-best-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 3px 8px;
+  font-size: 0.55rem;
+  color: #1a1a2e;
+  background: #fbbf24;
+  border-radius: 4px;
+  animation: pop 0.2s ease;
+}
+
+.best-score {
+  font-size: 0.6rem;
+  color: #9ca3af;
+  margin: 2px 0 0;
+}
+
 /* The one continuous animation is the hero bob; one-shot pops and short
    button transitions stay, which is consistent with WCAG motion guidance. */
 @media (prefers-reduced-motion: reduce) {

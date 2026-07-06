@@ -10,11 +10,11 @@ native `ios/` project) so they can be regenerated at any time.
 | `splash.png`      | 2732 × 2732 | Launch screen — light mode                         |
 | `splash-dark.png` | 2732 × 2732 | Launch screen — dark mode                          |
 
-## ⚠️ TODO: replace the placeholder icon
+## Regenerating after icon changes
 
-`icon.png` is a throwaway placeholder. **Drop in a real 1024 × 1024 `icon.png`**
-(opaque, no alpha channel — App Store rejects icons with transparency) before
-submitting, then regenerate the native assets:
+`icon.png` is the shipping 1024 × 1024 brand mark (pixel plus and star on the
+app's navy, opaque, no alpha channel since the App Store rejects icons with
+transparency). If it ever changes, regenerate the native assets:
 
 ```bash
 npx capacitor-assets generate --ios
