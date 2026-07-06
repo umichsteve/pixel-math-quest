@@ -9,6 +9,7 @@ import {
 } from './questionGenerator';
 import { useProgress } from './useProgress';
 import { isMuted, setMuted, playCorrect, playWrong, playStageClear } from './sound';
+import { hapticCorrect, hapticWrong, hapticStageClear } from './haptics';
 import './App.css';
 
 const SCREENS = { MAP: 'map', PLAY: 'play', RESULT: 'result' };
@@ -110,6 +111,7 @@ function PlayScreen({ stageId, onFinish, onQuit }) {
   const [correct, setCorrect] = useState(0);
   const [feedback, setFeedback] = useState(null); // { correct: boolean, text: string } | null
   const [heroMood, setHeroMood] = useState('normal');
+  const [streak, setStreak] = useState(0);
   const inputRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -135,18 +137,31 @@ function PlayScreen({ stageId, onFinish, onQuit }) {
 
       const isCorrect = userAnswer === question.answer;
       const newCorrect = isCorrect ? correct + 1 : correct;
+      const newStreak = isCorrect ? streak + 1 : 0;
 
       // Play inside the submit gesture so iOS unlocks the AudioContext.
-      if (isCorrect) playCorrect();
-      else playWrong();
+      if (isCorrect) {
+        playCorrect();
+        hapticCorrect();
+      } else {
+        playWrong();
+        hapticWrong();
+      }
 
       setFeedback(
         isCorrect
-          ? { correct: true, text: PRAISE[qIndex % PRAISE.length] }
+          ? {
+              correct: true,
+              text:
+                newStreak >= 3
+                  ? `${newStreak} in a row!`
+                  : PRAISE[qIndex % PRAISE.length],
+            }
           : { correct: false, text: `Nope! It was ${question.answer}` },
       );
       setHeroMood(isCorrect ? 'happy' : 'sad');
       setCorrect(newCorrect);
+      setStreak(newStreak);
 
       // A correct answer can advance quickly; a wrong one shows the real
       // answer, and a kid needs time to actually read it. That pause is the
@@ -166,7 +181,7 @@ function PlayScreen({ stageId, onFinish, onQuit }) {
         }
       }, advanceDelay);
     },
-    [input, question, correct, qIndex, stageId, onFinish],
+    [input, question, correct, streak, qIndex, stageId, onFinish],
   );
 
   return (
@@ -222,12 +237,19 @@ function PlayScreen({ stageId, onFinish, onQuit }) {
           {feedback ? feedback.text : '\u00A0'}
         </p>
       </div>
-      <p className="score-tracker">Score: {correct} / {qIndex + (feedback ? 1 : 0)}</p>
+      <p className="score-tracker">
+        Score: {correct} / {qIndex + (feedback ? 1 : 0)}
+        {streak >= 3 && (
+          <span className="streak-chip" aria-label={`${streak} correct in a row`}>
+            {'\u{1F525}'} x{streak}
+          </span>
+        )}
+      </p>
     </div>
   );
 }
 
-function ResultScreen({ stageId, correct, total, onBack, onReplay, onNext }) {
+function ResultScreen({ stageId, correct, total, prevBest, onBack, onReplay, onNext }) {
   const stage = getStage(stageId);
   // starsForScore is the single source of truth shared with useProgress, so
   // the stars shown here always match what was persisted for the stage.
@@ -235,8 +257,14 @@ function ResultScreen({ stageId, correct, total, onBack, onReplay, onNext }) {
   const passed = stars > 0;
   const nextStage = getStage(stageId + 1);
 
+  const isNewBest = correct > prevBest && prevBest > 0;
+  const best = Math.max(correct, prevBest);
+
   useEffect(() => {
-    if (passed) playStageClear();
+    if (passed) {
+      playStageClear();
+      hapticStageClear();
+    }
   }, [passed]);
 
   return (
@@ -245,7 +273,11 @@ function ResultScreen({ stageId, correct, total, onBack, onReplay, onNext }) {
       <h2>{passed ? 'Stage Clear!' : 'Try Again!'}</h2>
       <p className="result-score">
         {correct} / {total} correct
+        {isNewBest && <span className="new-best-badge">New Best!</span>}
       </p>
+      {prevBest > 0 && !isNewBest && (
+        <p className="best-score">Best: {best} / {total}</p>
+      )}
       <StarDisplay count={stars} />
       {!passed && <p className="hint">Get at least 50% to pass.</p>}
       <div className="result-actions">
@@ -282,11 +314,15 @@ export default function App() {
 
   const handleFinish = useCallback(
     (correct, total) => {
+      // Snapshot the best BEFORE recording, so the result screen can tell
+      // whether this run beat it. After recordStageResult the stored best
+      // already includes this run and the comparison would always be false.
+      const prevBest = progress.bestCorrect?.[currentStage] || 0;
       recordStageResult(currentStage, correct, total);
-      setLastResult({ correct, total });
+      setLastResult({ correct, total, prevBest });
       setScreen(SCREENS.RESULT);
     },
-    [currentStage, recordStageResult],
+    [currentStage, progress, recordStageResult],
   );
 
   const handleBackToMap = useCallback(() => {
@@ -318,6 +354,7 @@ export default function App() {
         stageId={currentStage}
         correct={lastResult.correct}
         total={lastResult.total}
+        prevBest={lastResult.prevBest}
         onBack={handleBackToMap}
         onReplay={handleReplay}
         onNext={handleNextStage}
